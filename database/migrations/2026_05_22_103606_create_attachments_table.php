@@ -11,12 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('profiles', function (Blueprint $table) {
+        Schema::create('attachments', function (Blueprint $table) {
             $table->id();
-            $table->text('bio')->nullable();
-            $table->string('avatar')->nullable();
-            // Polymorphic Columns: profileable_id & profileable_type 
-            $table->morphs('profileable');
+            $table->string('file_path');
+            $table->string('file_type');
+            $table->morphs('attachable'); // attachable_id & attachable_type
             $table->timestamps();
         });
     }
@@ -26,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('profiles');
+        Schema::dropIfExists('attachments');
     }
 };

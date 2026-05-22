@@ -11,13 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('profiles', function (Blueprint $table) {
+        Schema::create('comments', function (Blueprint $table) {
             $table->id();
-            $table->text('bio')->nullable();
-            $table->string('avatar')->nullable();
-            // Polymorphic Columns: profileable_id & profileable_type 
-            $table->morphs('profileable');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->text('body');
+            $table->morphs('commentable');
             $table->timestamps();
+
+            $table->index('created_at');
         });
     }
 
@@ -26,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('profiles');
+        Schema::dropIfExists('comments');
     }
 };

@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Middleware\ApiRequestLogger;
+use App\Http\Middleware\AuthorizeArticleAction;
+use App\Http\Middleware\AuthorizeUser;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,7 +15,21 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+
+        // every request cross here :  rate Limiting and RequestLogger
+        $middleware->appendToGroup(
+            'api',
+            [
+                'api.logger',
+                'throttle:api',
+            ]
+        );
+
+        $middleware->alias([
+            'authorize' => AuthorizeUser::class,
+            'authorize.article' => AuthorizeArticleAction::class,
+            'api.logger' => ApiRequestLogger::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

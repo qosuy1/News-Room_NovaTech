@@ -6,9 +6,9 @@ use App\Observers\ArticleObserver;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Query\Builder;
 
 #[ObservedBy(ArticleObserver::class)]
 #[Fillable(['user_id', 'title', 'content', 'status'])]
@@ -35,7 +35,7 @@ class Article extends Model
     }
 
     #[Scope]
-    public function scopePublished(Builder $query)
+    public function scopePublished(Builder $query): Builder
     {
         return $query->where('status', 'published');
     }

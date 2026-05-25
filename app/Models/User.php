@@ -8,10 +8,10 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -37,17 +37,17 @@ class User extends Authenticatable
         ];
     }
 
-    public static function scopeAdmins(Builder $query)
+    public function scopeAdmins(Builder $query): Builder
     {
         return $query->where('role', 'admin');
     }
 
-    public static function scopeWriters(Builder $query)
+    public function scopeWriters(Builder $query): Builder
     {
         return $query->where('role', 'writer');
     }
 
-    public static function scopeReaders(Builder $query)
+    public function scopeReaders(Builder $query): Builder
     {
         return $query->where('role', 'reader');
     }

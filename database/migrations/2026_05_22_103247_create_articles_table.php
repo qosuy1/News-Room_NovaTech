@@ -17,10 +17,11 @@ return new class extends Migration
             $table->string('title');
             $table->text('content');
             $table->enum('status', ['draft', 'published', 'archived'])->default('draft');
+            $table->timestamp('published_at')->nullable();
             $table->timestamps();
 
             // add indexes for optimized performance (WHERE & ORDER BY)
-            $table->index(['status' , 'created_at']);
+            $table->index(['status', 'created_at']);
 
         });
     }

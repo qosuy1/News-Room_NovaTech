@@ -13,7 +13,10 @@ return new class extends Migration
     {
         Schema::create('attachments', function (Blueprint $table) {
             $table->id();
-            $table->string('file_path');
+            $table->string('path');
+            $table->string('disk')->default('public');
+            $table->string('original_name');
+
             $table->string('file_type');
             $table->morphs('attachable'); // attachable_id & attachable_type
             $table->timestamps();

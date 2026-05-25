@@ -18,5 +18,5 @@ Schedule::job(new SendWeeklyReport, 'reports')
         Log::error('Scheduler: Failed to send weekly published articles report.');
     });
 
-Schedule::command('articles:archive')->monthlyOn(1, '00:00');
+Schedule::command('articles:archive --days=30')->monthlyOn(1, '00:00');
 Schedule::command('articles:report')->weeklyOn(5, '08:00');

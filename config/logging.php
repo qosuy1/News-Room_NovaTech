@@ -59,6 +59,13 @@ return [
             'days' => 30,
         ],
 
+        'reports' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/reports.log'),
+            'level' => 'info',
+            'days' => 360,
+        ],
+
         'stack' => [
             'driver' => 'stack',
             'channels' => explode(',', (string) env('LOG_STACK', 'single')),

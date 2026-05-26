@@ -14,7 +14,7 @@ NewsRoom is a Laravel API for a newsroom workflow. It helps writers publish arti
 1. Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/qosuy1/News-Room_NovaTech.git
 cd NewsRoom_Task5
 ```
 

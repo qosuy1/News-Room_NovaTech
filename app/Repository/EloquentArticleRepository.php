@@ -10,10 +10,10 @@ class EloquentArticleRepository implements ArticleRepositoryInterface
 {
     private const RELATIONS = ['user', 'tags', 'attachments', 'comments.user'];
 
-    public function getAllPublishedWithRelations(int $perPage = 15): LengthAwarePaginator
+        public function getAllPublishedWithRelations(int $perPage = 15 , array $relations = self::RELATIONS): LengthAwarePaginator
     {
-        return Article::where('status', 'published')
-            ->with(self::RELATIONS)
+        return Article::published()
+            ->with($relations)
             ->withCount('comments')
             ->orderBy('published_at', 'desc')
             ->paginate($perPage);
@@ -64,14 +64,14 @@ class EloquentArticleRepository implements ArticleRepositoryInterface
         ]);
     }
 
-    public function find(string|int $id): Article
+    public function find(string|int $id , array $relations = self::RELATIONS): Article
     {
-        return Article::with(self::RELATIONS)->findOrFail($id);
+        return Article::with($relations)->findOrFail($id);
     }
 
-    public function loadRelations(Article $article): Article
+    public function loadRelations(Article $article , array $relations = self::RELATIONS): Article
     {
-        return $article->load(self::RELATIONS)->loadCount('comments');
+        return $article->load($relations)->loadCount('comments');
     }
 
     public function update(Article $article, array $data): Article

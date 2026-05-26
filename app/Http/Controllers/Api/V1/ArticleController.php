@@ -46,7 +46,7 @@ class ArticleController extends Controller
     {
         $article = $this->articleService->showArticle($article);
 
-        return ApiResponse::success($article);
+        return ApiResponse::success(new ArticleResource($article));
     }
 
     /**
@@ -56,7 +56,7 @@ class ArticleController extends Controller
     {
         $article = $this->articleService->updateArticle($article, $request->validated());
 
-        return ApiResponse::success($article, 'Article updated successfully.');
+        return ApiResponse::success(new ArticleResource($article), 'Article updated successfully.');
     }
 
     /**
@@ -73,6 +73,6 @@ class ArticleController extends Controller
     {
         $article = $this->articleService->publishArticle($article);
 
-        return ApiResponse::success($article, 'Article published successfully.');
+        return ApiResponse::success(new ArticleResource($article), 'Article published successfully.');
     }
 }

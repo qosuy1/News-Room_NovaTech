@@ -7,7 +7,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 interface ArticleRepositoryInterface
 {
-    public function getAllPublishedWithRelations(int $perPage = 15): LengthAwarePaginator;
+    public function getAllPublishedWithRelations(int $perPage = 15 , array $relations = []): LengthAwarePaginator;
 
     public function getAllFiltered(array $filters, int $perPage = 15): LengthAwarePaginator;
 
@@ -15,9 +15,9 @@ interface ArticleRepositoryInterface
 
     public function create(array $data): Article;
 
-    public function find(string|int $id): Article;
+    public function find(string|int $id , array $relations = []): Article;
 
-    public function loadRelations(Article $article): Article;
+    public function loadRelations(Article $article, array $relations = []): Article;
 
     public function update(Article $article, array $data): Article;
 

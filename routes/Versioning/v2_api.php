@@ -3,8 +3,13 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\TagController;
-use App\Http\Controllers\Api\V2\ArticleController;
+use App\Http\Controllers\Api\V1\ArticleController;
+use App\Http\Controllers\Api\V2\HomeController;
 use Illuminate\Support\Facades\Route;
+
+
+
+Route::get('/', [HomeController::class, 'index']);
 
 Route::prefix('articles')->group(function () {
     Route::get('/', [ArticleController::class, 'index']);

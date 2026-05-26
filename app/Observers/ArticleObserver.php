@@ -4,10 +4,14 @@ namespace App\Observers;
 
 use App\Models\Article;
 use App\Services\DashboardService;
+use App\Services\HomeArticleFeedService;
 
 class ArticleObserver
 {
-    public function __construct(private DashboardService $dashboardService) {}
+    public function __construct(
+        private DashboardService $dashboardService,
+        private HomeArticleFeedService $homeArticleFeedService,
+    ) {}
 
     /**
      * Handle the article "created" event.
@@ -15,6 +19,10 @@ class ArticleObserver
     public function created(Article $article): void
     {
         $this->dashboardService->invalidateAll();
+
+        if ($article->status === 'published') {
+            $this->homeArticleFeedService->invalidateAll();
+        }
     }
 
     /**
@@ -28,6 +36,7 @@ class ArticleObserver
 
         if ($wasPublished || $isNowPublished || $statusChanged) {
             $this->dashboardService->invalidateAll();
+            $this->homeArticleFeedService->invalidateAll();
         }
     }
 
@@ -37,5 +46,9 @@ class ArticleObserver
     public function deleted(Article $article): void
     {
         $this->dashboardService->invalidateAll();
+
+        if ($article->status === 'published') {
+            $this->homeArticleFeedService->invalidateAll();
+        }
     }
 }

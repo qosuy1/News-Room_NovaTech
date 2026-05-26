@@ -18,22 +18,26 @@ class DashboardService
 {
     private const LOCK_TIMEOUT = 5;
 
-    public function __construct(private ArticleRepositoryInterface $article_repository)
-    {
-    }
+    public function __construct(private ArticleRepositoryInterface $article_repository) {}
+
     // Public API
     public function getAllArticlesForDashboard(Request $request, int $perPage = 15)
     {
         $user = $request->user();
 
-        return $this->article_repository->getAllForDashboard($user->role, $user->id, $perPage);
+        return $this->rememberWithLock(
+            CacheKeys::DASHBOARD_ARTICLES,
+            ['dashboard', 'articles', "user:{$user->id}"],
+            fn () => $this->article_repository->getAllForDashboard($user->role, $user->id, $perPage)
+        );
     }
+
     public function getStats(): array
     {
         return $this->rememberWithLock(
             CacheKeys::DASHBOARD_STATS,
             ['dashboard', 'status'],
-            fn() => [
+            fn () => [
                 'article_count' => $this->fetchArticleCount(),
                 'comment_count' => $this->fetchCommentCount(),
                 'top_writers' => $this->fetchTopWriters(),
@@ -47,7 +51,7 @@ class DashboardService
         return $this->rememberWithLock(
             CacheKeys::TAGS_MOST_USED,
             ['tags', 'most_used'],
-            fn() => $this->fetchMostUsedTags($limit)
+            fn () => $this->fetchMostUsedTags($limit)
         );
     }
 
@@ -112,7 +116,7 @@ class DashboardService
             ->orderByDesc('articles_count')
             ->limit($limit)
             ->get()
-            ->map(fn($user) => [
+            ->map(fn ($user) => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'articles_count' => $user->articles_count,
@@ -128,7 +132,7 @@ class DashboardService
             ->orderByDesc('usage_count')
             ->limit($limit)
             ->get()
-            ->map(fn($tag) => [
+            ->map(fn ($tag) => [
                 'id' => $tag->id,
                 'name' => $tag->name,
                 'usage_count' => $tag->usage_count,

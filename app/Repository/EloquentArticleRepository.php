@@ -10,7 +10,7 @@ class EloquentArticleRepository implements ArticleRepositoryInterface
 {
     private const RELATIONS = ['user', 'tags', 'attachments', 'comments.user'];
 
-        public function getAllPublishedWithRelations(int $perPage = 15 , array $relations = self::RELATIONS): LengthAwarePaginator
+    public function getAllPublishedWithRelations(int $perPage = 15, array $relations = self::RELATIONS): LengthAwarePaginator
     {
         return Article::published()
             ->with($relations)
@@ -24,15 +24,15 @@ class EloquentArticleRepository implements ArticleRepositoryInterface
         $query = Article::query()
             ->with(['user', 'tags', 'attachments']);
 
-        if (! empty($filters['status'])) {
+        if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
 
-        if (! empty($filters['search'])) {
+        if (!empty($filters['search'])) {
             $search = $filters['search'];
             $query->where(function ($subQuery) use ($search) {
-                $subQuery->where('title', 'like', '%'.$search.'%')
-                    ->orWhere('content', 'like', '%'.$search.'%');
+                $subQuery->where('title', 'like', '%' . $search . '%')
+                    ->orWhere('content', 'like', '%' . $search . '%');
             });
         }
 
@@ -50,6 +50,10 @@ class EloquentArticleRepository implements ArticleRepositoryInterface
             $query->where('user_id', $userId);
         }
 
+        if ($role === 'user') {
+            $query->whereHas('comments', fn($q) => $q->where('user_id', $userId));
+        }
+
         return $query->paginate($perPage);
     }
 
@@ -64,12 +68,12 @@ class EloquentArticleRepository implements ArticleRepositoryInterface
         ]);
     }
 
-    public function find(string|int $id , array $relations = self::RELATIONS): Article
+    public function find(string|int $id, array $relations = self::RELATIONS): Article
     {
         return Article::with($relations)->findOrFail($id);
     }
 
-    public function loadRelations(Article $article , array $relations = self::RELATIONS): Article
+    public function loadRelations(Article $article, array $relations = self::RELATIONS): Article
     {
         return $article->load($relations)->loadCount('comments');
     }

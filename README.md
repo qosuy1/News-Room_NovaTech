@@ -1,13 +1,6 @@
 # NewsRoom API
 
-NewsRoom is a Laravel API for a newsroom workflow. It helps writers publish articles, lets admins review and archive content, and supports readers with comments, tags, and attachments.
-
-## What it does
-
-- Manages articles through `draft`, `published`, and `archived` states.
-- Supports role-based access for `admin`, `writer`, and `reader` users.
-- Sends notifications and runs background jobs.
-- Includes scheduled archive and report commands.
+NewsRoom is a Laravel API for a newsroom workflow. It helps writers publish articles, lets admins monitor and archive content, and supports readers with published article feeds, comments, tags, attachments, notifications, reports, and scheduled maintenance.
 
 ## Setup
 
@@ -59,7 +52,7 @@ DB_PASSWORD=
 php artisan migrate
 ```
 
-7. Install frontend dependencies and build if needed:
+7. Install frontend dependencies and build assets if needed:
 
 ```bash
 npm install
@@ -72,13 +65,13 @@ npm run build
 php artisan serve
 ```
 
-9. Start the queue worker:
+9. Start the queue worker for queued notifications and report jobs:
 
 ```bash
 php artisan queue:work
 ```
 
-10. Run scheduled commands manually:
+10. Run scheduled commands manually while developing:
 
 ```bash
 php artisan schedule:run
@@ -90,72 +83,165 @@ php artisan schedule:run
 composer test
 ```
 
-## Artisan commands
+## Commands
 
-Archive draft articles older than 30 days:
+Archive non-published articles older than the default 30 days:
 
 ```bash
 php artisan articles:archive
 ```
 
-Override the default days:
+Archive non-published articles with a custom age:
 
 ```bash
-php artisan articles:archive 45
+php artisan articles:archive --days=45
 ```
 
-Generate the published articles report:
+Generate a published articles report for the last 7 days:
 
 ```bash
 php artisan articles:report --days=7
 ```
 
-## Scheduler
+Run all due scheduled tasks:
 
-Defined in `routes/console.php`:
+```bash
+php artisan schedule:run
+```
+
+The scheduler is defined in `routes/console.php`:
 
 ```php
-Schedule::command('articles:archive 30')->monthlyOn(1, '00:00');
+Schedule::command('articles:archive --days=30')->monthlyOn(1, '00:00');
 Schedule::command('articles:report')->weeklyOn(5, '08:00');
 ```
 
-## Core concepts
+## Entities And Relations
+
+### User
+
+Users represent `admin`, `writer`, and `reader` accounts.
+
+- A user has one profile through a polymorphic `profileable` relation.
+- A user has many articles.
+- A user has many comments.
+- A user can receive notifications.
+- Role helper methods such as `isAdmin()`, `isWriter()`, and `isReader()` are used by authorization logic.
+
+### Profile
+
+Profiles store extra account information.
+
+- A profile belongs to a `profileable` model.
+- In this project, the main profile owner is `User`.
+
+### Article
+
+Articles are the main newsroom content entity.
+
+- An article belongs to one writer through `user_id`.
+- An article has many comments through a polymorphic `commentable` relation.
+- An article has many attachments through a polymorphic `attachable` relation.
+- An article belongs to many tags through the polymorphic `taggables` pivot table.
+- An article has a `status`: `draft`, `published`, or `archived`.
+- A published article can store `published_at`.
+
+### Comment
+
+Comments belong to users and can be attached to commentable models.
+
+- A comment belongs to one user.
+- A comment belongs to a `commentable` model.
+- Articles can have many comments.
+
+### Attachment
+
+Attachments store uploaded files.
+
+- An attachment belongs to an `attachable` model.
+- Articles can have many attachments.
+- Attachment data includes path/disk/original name/file type depending on the upload flow.
+
+### Tag
+
+Tags organize article topics.
+
+- A tag belongs to many articles through `taggables`.
+- Tags use a slug mutator to keep URL-friendly names.
+
+### Relation Summary
+
+```text
+User 1 -------- * Article
+User 1 -------- 1 Profile, through profileable polymorphic relation
+User 1 -------- * Comment
+
+Article 1 ----- * Comment, through commentable polymorphic relation
+Article 1 ----- * Attachment, through attachable polymorphic relation
+Article * ----- * Tag, through taggables polymorphic pivot
+```
+
+## Core Concepts
 
 ### Roles
 
-- `writer`: creates and manages articles.
-- `admin`: reviews, archives, and monitors content.
-- `reader`: views published articles and adds comments.
+- `writer`: creates, updates, deletes, and publishes allowed articles.
+- `admin`: manages protected actions such as tags and can monitor system behavior.
+- `reader`: views published content and receives reader-focused notifications.
 
-### Articles
+### Article lifecycle
 
-- Main content entity with `draft`, `published`, and `archived` statuses.
-- Supports tags, attachments, and comments.
-- Uses queued notifications for side effects.
+Articles move through `draft`, `published`, and `archived` states. Publishing can trigger events, queued notifications, and cache invalidation. Archiving can run automatically through the scheduler.
 
 ### Polymorphic relations
 
-Used for:
+Profiles, comments, attachments, and tags use polymorphic-style modeling where it gives the project flexibility. The main benefit is that reusable features can later attach to other models without redesigning the whole database.
 
-- profiles,
-- comments,
-- attachments,
-- tags.
+### Versioned public article feed
 
-This keeps the schema flexible across different models.
+The home feed is versioned clearly:
 
-## Architecture decisions
+- `GET /api/v1/` uses `App\Http\Controllers\Api\V1\HomeController`.
+- `GET /api/v2/` uses `App\Http\Controllers\Api\V2\HomeController`.
+
+V1 loads published articles with their writer:
+
+```php
+$articles = $this->articleRepository->getAllPublishedWithRelations(15, ['user']);
+```
+
+V1 returns a simple article feed through `App\Http\Resources\V1\HomeResource`:
+
+```json
+{
+  "id": 15,
+  "title": "Local Newsroom Publishes New Report",
+  "content": "Article body...",
+  "writer_name": "Sara Writer",
+  "published_at": "2026-05-26 10:15:00"
+}
+```
+
+V2 loads published articles with writer and tags:
+
+```php
+$articles = $this->articleRepository->getAllPublishedWithRelations(15, ['user', 'tags']);
+```
+
+V2 uses `App\Http\Resources\V2\HomeResource` to extend the home response with richer metadata such as tags, reading time, and comment count. This is the practical reason for versioning: V2 can improve the public article feed without breaking clients that still depend on V1.
+
+## Architecture Decisions
 
 ### 1. Versioned API routes
 
-**Problem:** API responses and behavior can change over time. If all routes live in one file with one controller version, adding a new response format later can break existing clients.
+**Problem:** API responses and behavior can change over time. If all routes live in one version, changing a response can break existing clients.
 
-**What I decided:** I separated the API into versioned route files:
+**What:** The API is split into versioned route files:
 
 - `routes/Versioning/v1_api.php`
 - `routes/Versioning/v2_api.php`
 
-**How it works:** The main `routes/api.php` file only registers high-level prefixes:
+**How:** `routes/api.php` loads each file under a version prefix:
 
 ```php
 Route::prefix('v1')->group(function () {
@@ -167,58 +253,52 @@ Route::prefix('v2')->group(function () {
 });
 ```
 
-Each version can point to its own controllers and resources, for example V1 and V2 article resources.
-
-**Why:** This makes the API safer to evolve. I can improve V2 without changing the response shape expected by V1 clients.
+**Why:** V1 can stay stable while V2 introduces richer responses, like the V2 home article feed.
 
 ### 2. Thin controllers
 
-**Problem:** If controllers contain validation, authorization, database queries, file uploads, notifications, and response formatting, they become hard to read and hard to test.
+**Problem:** Controllers become hard to read when they contain validation, authorization, queries, uploads, notifications, and formatting.
 
-**What I decided:** Controllers should only handle HTTP flow:
+**What:** Controllers only handle HTTP flow: receive request, call service/repository, return response.
 
-- receive the request,
-- call a service or repository,
-- return an API response/resource.
+**How:** `ArticleController` delegates article workflows to `ArticleService`, then returns `ArticleResource` or `ApiResponse`.
 
-**How it works:** Controllers such as `ArticleController` call `ArticleService` for business operations and return `ArticleResource` or `ApiResponse`.
+**Why:** Business logic stays reusable and controllers stay focused on API behavior.
 
-**Why:** This keeps controllers focused on the API layer. Business logic can be reused from commands, jobs, or future controllers without copying code.
+### 3. Service layer
 
-### 3. Service layer for business logic
+**Problem:** Creating, updating, publishing, uploading attachments, syncing tags, and dispatching notifications are workflows, not simple controller actions.
 
-**Problem:** Article creation, publishing, attachment upload, tag syncing, dashboard statistics, and notifications are workflows, not simple database calls.
-
-**What I decided:** I created services such as:
+**What:** Business logic lives in services:
 
 - `ArticleService`
 - `AttachmentService`
 - `DashboardService`
 
-**How it works:** The controller sends validated data to the service. The service handles transactions, relations, uploads, cache invalidation, events, and jobs.
+**How:** Services coordinate transactions, repositories, file uploads, relations, events, jobs, and cache updates.
 
-**Why:** Services make complex workflows easier to maintain. They also reduce duplication because the same service method can be called from different parts of the app.
+**Why:** Complex workflows become easier to maintain and reuse.
 
-### 4. Repository pattern for article queries
+### 4. Repository pattern
 
-**Problem:** Article queries can become complicated because articles need filters, relations, ordering, pagination, publishing status, and optimized loading.
+**Problem:** Article queries need relations, pagination, status filters, ordering, and optimized loading.
 
-**What I decided:** I added an article repository contract and implementation:
+**What:** Article query logic is placed behind:
 
 - `ArticleRepositoryInterface`
 - `EloquentArticleRepository`
 
-**How it works:** `ArticleService` depends on the interface, not directly on the Eloquent implementation. The binding is registered in `AppServiceProvider`.
+**How:** Services depend on the interface, and Laravel resolves the implementation through `AppServiceProvider`.
 
-**Why:** This separates business logic from query details. If article storage or query optimization changes later, the service layer does not need to change much.
+**Why:** Query details are separated from business logic.
 
 ### 5. Dependency injection and contracts
 
-**Problem:** If classes manually create their dependencies, the code becomes tightly coupled and harder to test.
+**Problem:** Manually creating dependencies tightly couples classes together.
 
-**What I decided:** I used Laravel dependency injection with interfaces.
+**What:** Interfaces are bound to implementations.
 
-**How it works:** `AppServiceProvider` binds contracts to implementations:
+**How:** `AppServiceProvider` registers bindings:
 
 ```php
 $this->app->bind(ArticleRepositoryInterface::class, EloquentArticleRepository::class);
@@ -226,137 +306,383 @@ $this->app->bind(AttachmentServiceInterface::class, AttachmentService::class);
 $this->app->bind(NotificationDispatcherInterface::class, RoleBasedNotificationDispatcher::class);
 ```
 
-**Why:** Controllers and services can request what they need through constructors. Laravel resolves the correct implementation automatically.
+**Why:** Laravel can inject the correct dependency automatically, making the code cleaner and easier to change.
 
-### 6. Form requests for validation and authorization
+### 6. Form requests
 
-**Problem:** Validation rules and authorization checks can clutter controllers, especially when every resource has different rules.
+**Problem:** Validation and authorization rules can clutter controllers.
 
-**What I decided:** I moved request validation into form request classes under `app/Http/Requests/V1`.
+**What:** Request rules live in `app/Http/Requests/V1`.
 
-**How it works:** Examples include:
+**How:** Classes such as `StoreArticleRequest`, `UpdateArticleRequest`, `RegisterRequest`, and `LoginRequest` handle validation, authorization, messages, and input preparation.
 
-- `StoreArticleRequest`
-- `UpdateArticleRequest`
-- `RegisterRequest`
-- `LoginRequest`
-- tag, comment, profile, and attachment requests
+**Why:** Validation is easier to find, test, and change per API version.
 
-These classes handle authorization, validation rules, custom messages, and input preparation.
+### 7. Resources and response helper
 
-**Why:** This keeps controller methods clean and makes validation easier to find, test, and update per API version.
+**Problem:** Returning raw Eloquent models can expose unwanted fields and create inconsistent API shapes.
 
-### 7. API resources and response helper
+**What:** API output is shaped with resources and `ApiResponse`.
 
-**Problem:** Returning raw Eloquent models can expose unwanted fields and create inconsistent API responses.
+**How:** `ArticleResource`, `DashboardResource`, `HomeResource`, and `ApiResponse` define consistent response structures.
 
-**What I decided:** I used API resources and a shared response helper.
+**Why:** Clients get predictable JSON, and internal model details stay controlled.
 
-**How it works:**
+### 8. Role-based middleware
 
-- `ArticleResource` controls the article response structure.
-- `DashboardResource` controls dashboard output.
-- `ApiResponse` standardizes success, created, error, and paginated responses.
+**Problem:** Admins, writers, and readers need different permissions.
 
-**Why:** The API response becomes predictable for frontend/mobile clients, and internal database structure stays hidden.
+**What:** Authorization is handled through middleware and user role helpers.
 
-### 8. Role-based authorization middleware
+**How:** `AuthorizeUser` handles role checks, and `AuthorizeArticleAction` handles article-specific actions like view, update, delete, and publish.
 
-**Problem:** Admins, writers, and readers do not have the same permissions. Checking roles manually in every controller action would be repetitive and error-prone.
+**Why:** Route protection stays consistent and reusable.
 
-**What I decided:** I added role and article action middleware.
+### 9. Events, jobs, notifications, and observers
 
-**How it works:**
+**Problem:** Publishing an article can trigger slow side effects, such as notifications and cache invalidation.
 
-- `AuthorizeUser` checks simple role-based access.
-- `AuthorizeArticleAction` checks actions such as view, update, delete, and publish.
-- Routes attach middleware where the rule is needed.
+**What:** Side effects are separated into events, jobs, listeners, observers, and notifications.
 
-**Why:** Authorization stays close to the route being protected, and the same rule can be reused across endpoints.
+**How:** `ArticlePublished`, queued jobs, notification dispatchers, and observers react to article/user changes.
 
-### 9. Polymorphic relations
+**Why:** Article requests stay fast, and background work becomes easier to retry and maintain.
 
-**Problem:** Comments, attachments, and profiles may belong to different models in the future. Creating separate tables for every model would make the schema harder to extend.
+### 10. Rate limiting
 
-**What I decided:** I used polymorphic relationships for reusable features.
+**Problem:** Login, register, create, update, and delete actions are more sensitive than public reads.
 
-**How it works:**
+**What:** The app uses `api` and `strict` rate limiters.
 
-- `Article` has morph many `comments`.
-- `Article` has morph many `attachments`.
-- `User` has morph one `profile`.
-- `Tag` uses a polymorphic many-to-many relation through `taggables`.
+**How:** `AppServiceProvider` defines the limits, and routes apply `throttle:strict` for write-heavy actions.
 
-**Why:** The schema is flexible. For example, attachments can later be added to another model without creating a new attachment table.
+**Why:** The app is better protected from spam and abuse.
 
-### 10. Events, jobs, observers, and notifications
+### 11. Scheduled commands
 
-**Problem:** Publishing an article can trigger many side effects: notify readers, notify writers/admins, update dashboard cache, and send reports. Doing all of this directly in the request would slow the API down.
+**Problem:** Reports and archive maintenance should not require manual work every time.
 
-**What I decided:** I separated side effects using Laravel events, jobs, observers, listeners, and notifications.
+**What:** The app uses Laravel scheduled commands.
 
-**How it works:**
-
-- `ArticlePublished` represents the publish event.
-- queued jobs handle slower work.
-- observers react to model lifecycle changes.
-- listeners invalidate dashboard cache.
-- notification dispatchers choose how notifications are sent.
-
-**Why:** Article actions stay fast and focused. Side effects become isolated, easier to retry, and easier to change.
-
-### 11. Rate limiting
-
-**Problem:** Some routes are more sensitive than others. Login, register, create, update, and delete actions should be protected more strongly than read-only endpoints.
-
-**What I decided:** I added two rate limiters:
-
-- `api`: general API traffic.
-- `strict`: write-heavy or sensitive actions.
-
-**How it works:** `AppServiceProvider` defines the limits, and routes apply `throttle:strict` where needed.
-
-**Why:** This protects the app from spam and abuse while still allowing normal API usage.
-
-### 12. Scheduled commands
-
-**Problem:** Archiving old articles and generating reports should not require an admin to manually trigger them every time.
-
-**What I decided:** I used Laravel scheduled commands.
-
-**How it works:** `routes/console.php` schedules:
-
-- `articles:archive`
-- `articles:report`
-
-The archive command can receive a custom days value, and the report command can generate logs for a selected period.
+**How:** `routes/console.php` schedules `articles:archive`, `articles:report`, and weekly report jobs.
 
 **Why:** Recurring maintenance becomes automatic and predictable.
 
-### 13. Separate logging channels
+### 12. Separate logging channels
 
-**Problem:** Mixing API logs, report logs, and Laravel system logs in one file makes debugging harder.
+**Problem:** API logs and report logs are hard to inspect if everything goes to one file.
 
-**What I decided:** I added dedicated logging channels.
+**What:** Dedicated `api` and `reports` logging channels are configured.
 
-**How it works:**
+**How:** `config/logging.php` defines separate daily log files.
 
-- `api` writes API activity logs.
-- `reports` writes generated article report logs.
-- default Laravel logs remain separate.
+**Why:** Debugging and auditing become easier.
 
-**Why:** Logs are easier to read, search, and audit.
+### 13. Queues and Redis
 
-### 14. Queues and Redis
+**Problem:** Notifications and report emails can make requests slow.
 
-**Problem:** Notifications and report emails can take time. Running them during the HTTP request would make users wait.
+**What:** Background jobs are processed through queues, with Redis/Predis support configured.
 
-**What I decided:** I configured queue support and Redis/Predis.
-
-**How it works:** Jobs are dispatched to the queue, and a worker processes them in the background:
+**How:** Run a worker with:
 
 ```bash
 php artisan queue:work
 ```
 
-**Why:** The API stays responsive, and background work can be retried if something fails.
+**Why:** Slow work moves out of the request lifecycle.
+
+## Project Structure
+
+### `app/`
+
+```text
+app/
+|-- Console/Commands       Scheduled and manually executed Artisan commands.
+|-- Enums                  Shared enum-like values such as cache keys.
+|-- Events                 Domain events such as article publication.
+|-- Helper/V1              Shared API response helper for V1.
+|-- Http/Controllers/Api   Versioned API controllers.
+|-- Http/Middleware        Authorization, article permissions, and request logging.
+|-- Http/Requests/V1       Versioned form request validation.
+|-- Http/Resources         API response transformers.
+|-- Interfaces             Contracts for repositories and services.
+|-- Jobs                   Queue jobs for reports and notifications.
+|-- Listeners              Event listeners such as cache invalidation.
+|-- Mail                   Mailable classes for reports.
+|-- Models                 Eloquent entities and relationships.
+|-- Notifications          Laravel notification classes.
+|-- Observers              Model lifecycle observers.
+|-- Repository             Eloquent repository implementations.
+|-- Rules                  Custom validation rules.
+`-- Services               Business workflows and notification dispatching.
+```
+
+## API Response Examples
+
+The API uses this shared response style from `App\Helper\V1\ApiResponse`:
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {}
+}
+```
+
+### Register
+
+Request:
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+Accept: application/json
+```
+
+```json
+{
+  "name": "Sara Writer",
+  "email": "sara@example.com",
+  "password": "password",
+  "password_confirmation": "password",
+  "role": "writer"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "message": "account created successfully!",
+  "data": {
+    "user": {
+      "id": 1,
+      "name": "Sara Writer",
+      "email": "sara@example.com",
+      "role": "writer"
+    },
+    "access_token": "1|plain-text-token",
+    "token_type": "Bearer"
+  }
+}
+```
+
+### Login
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+Accept: application/json
+```
+
+```json
+{
+  "email": "sara@example.com",
+  "password": "password"
+}
+```
+
+```json
+{
+  "success": true,
+  "message": "login successful and token generated.",
+  "data": {
+    "user": {
+      "id": 1,
+      "name": "Sara Writer",
+      "email": "sara@example.com",
+      "role": "writer"
+    },
+    "access_token": "2|plain-text-token",
+    "token_type": "Bearer"
+  }
+}
+```
+
+### V1 home article feed
+
+```http
+GET /api/v1/
+Accept: application/json
+```
+
+```json
+{
+  "success": true,
+  "message": "Articles retrieved successfully.",
+  "data": [
+    {
+      "id": 15,
+      "title": "Local Newsroom Publishes New Report",
+      "content": "Article body...",
+      "writer_name": "Sara Writer",
+      "published_at": "2026-05-26 10:15:00"
+    }
+  ]
+}
+```
+
+### V2 home article feed
+
+```http
+GET /api/v2/
+Accept: application/json
+```
+
+V2 is intended to enrich the home article feed with tags and metadata while keeping V1 stable:
+
+```json
+{
+  "success": true,
+  "message": "Articles retrieved successfully.",
+  "data": [
+    {
+      "id": 15,
+      "title": "Local Newsroom Publishes New Report",
+      "content": "Article body...",
+      "writer_name": "Sara Writer",
+      "published_at": "2026-05-26 10:15:00",
+      "tags": [
+        {
+          "id": 2,
+          "name": "Politics"
+        }
+      ],
+      "meta": {
+        "reading_time": 3,
+        "comment_count": 5
+      }
+    }
+  ]
+}
+```
+
+### Article list
+
+```http
+GET /api/v1/articles?per_page=10
+Accept: application/json
+```
+
+```json
+{
+  "success": true,
+  "message": "Articles retrieved successfully.",
+  "data": [
+    {
+      "articles": {
+        "id": 15,
+        "title": "Local Newsroom Publishes New Report",
+        "content": "Article body...",
+        "status": "published",
+        "published_at": "2026-05-26 10:15:00",
+        "comments_count": 3
+      },
+      "writer": {
+        "id": 1,
+        "name": "Sara Writer",
+        "email": "sara@example.com"
+      },
+      "tags": [
+        {
+          "id": 2,
+          "name": "Politics",
+          "slug": "politics"
+        }
+      ],
+      "attachments": []
+    }
+  ],
+  "links": {},
+  "meta": {
+    "current_page": 1,
+    "per_page": 10,
+    "total": 25
+  }
+}
+```
+
+### Create article
+
+```http
+POST /api/v1/articles
+Accept: application/json
+Authorization: Bearer 2|plain-text-token
+```
+
+```json
+{
+  "title": "How Newsrooms Handle Breaking Stories",
+  "content": "Long article content with at least one hundred characters...",
+  "status": "draft",
+  "tags": [1, 2]
+}
+```
+
+```json
+{
+  "success": true,
+  "message": "Article created successfully.",
+  "data": {
+    "articles": {
+      "id": 16,
+      "title": "How Newsrooms Handle Breaking Stories",
+      "content": "Long article content with at least one hundred characters...",
+      "status": "draft",
+      "published_at": null,
+      "comments_count": null
+    },
+    "writer": {
+      "id": 1,
+      "name": "Sara Writer",
+      "email": "sara@example.com"
+    },
+    "comments": [],
+    "tags": [],
+    "attachments": []
+  }
+}
+```
+
+### Publish article
+
+```http
+PATCH /api/v1/articles/16/publish
+Accept: application/json
+Authorization: Bearer 2|plain-text-token
+```
+
+```json
+{
+  "success": true,
+  "message": "Article published successfully.",
+  "data": {
+    "articles": {
+      "id": 16,
+      "title": "How Newsrooms Handle Breaking Stories",
+      "status": "published",
+      "published_at": "2026-05-26 10:30:00"
+    }
+  }
+}
+```
+
+### Validation error
+
+Laravel form requests may return the default validation shape before the controller runs:
+
+```json
+{
+  "message": "The title field is required. (and 1 more error)",
+  "errors": {
+    "title": [
+      "Article title is required."
+    ],
+    "content": [
+      "Article content must be at least 100 characters."
+    ]
+  }
+}
+```
